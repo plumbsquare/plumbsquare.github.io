@@ -1,0 +1,58 @@
+name: Auto-Unzip & Deploy PlumbSquare to GitHub Pages
+
+on:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Auto-Unzip plumbsquare-site.zip & Auto-Configure Domain URL
+        run: |
+          if [ -f "plumbsquare-site.zip" ]; then
+            echo "Found plumbsquare-site.zip — extracting all files into repository..."
+            unzip -o -q plumbsquare-site.zip -d .
+            rm -f plumbsquare-site.zip
+            if [ -f "update-domain.py" ] && [ -n "${{ steps.pages.outputs.base_url }}" ]; then
+              python3 update-domain.py "${{ steps.pages.outputs.base_url }}"
+            fi
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Auto-extracted PlumbSquare website & configured domain URLs" || true
+            git push || true
+          elif [ -f "update-domain.py" ] && [ -n "${{ steps.pages.outputs.base_url }}" ]; then
+            python3 update-domain.py "${{ steps.pages.outputs.base_url }}"
+          fi
+          mkdir -p _site
+          rsync -a --exclude='_site' --exclude='.git' ./ _site/
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
